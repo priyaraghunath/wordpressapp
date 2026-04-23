@@ -9,21 +9,42 @@ env:
 phases:
   pre_build:
     commands:
-      - echo "Logging in to ECR..."
+      - echo Logging in to ECR...
       - ACCOUNT_ID=$(aws sts get-caller-identity --query Account --output text)
       - echo "Account ID: $ACCOUNT_ID"
       - REPO_URI=$ACCOUNT_ID.dkr.ecr.$AWS_DEFAULT_REGION.amazonaws.com/$IMAGE_REPO_NAME
       - echo "Repository URI: $REPO_URI"
-      - aws ecr create-repository --repository-name $IMAGE_REPO_NAME --region $AWS_DEFAULT_REGION || echo "Repository already exists"
-      - aws ecr get-login-password --region $AWS_DEFAULT_REGION | docker login --username AWS --password-stdin $REPO_URI
+
+      # Ensure repo exists with better error handling
+      - |
+        if ! aws ecr describe-repositories --repository-names $IMAGE_REPO_NAME --region $AWS_DEFAULT_REGION 2>/dev/null; then
+          echo "Repository does not exist. Creating..."
+          aws ecr create-repository --repository-name $IMAGE_REPO_NAME --region $AWS_DEFAULT_REGION
+        else
+          echo "Repository already exists"
+        fi
+
+      # Login to ECR
+      - echo "Logging into ECR..."
+      - aws ecr get-login-password --region $AWS_DEFAULT_REGION | docker login --username AWS --password-stdin $ACCOUNT_ID.dkr.ecr.$AWS_DEFAULT_REGION.amazonaws.com
 
   build:
     commands:
       - echo "Build started on $(date)"
       - echo "Building Docker image..."
-      - docker build -t $REPO_URI:$IMAGE_TAG .
+      - docker build -t $IMAGE_REPO_NAME:$IMAGE_TAG .
+      - docker tag $IMAGE_REPO_NAME:$IMAGE_TAG $REPO_URI:$IMAGE_TAG
+      - echo "Docker image built and tagged successfully"
 
   post_build:
     commands:
-      - echo "Pushing Docker image..."
+      - echo "Pushing image to ECR..."
       - docker push $REPO_URI:$IMAGE_TAG
+      - echo "Image pushed successfully"
+      - printf '[{"name":"ols-container","imageUri":"%s"}]' $REPO_URI:$IMAGE_TAG > imagedefinitions.json
+      - echo "Generated imagedefinitions.json:"
+      - cat imagedefinitions.json
+
+artifacts:
+  files:
+    - imagedefinitions.json
