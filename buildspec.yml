@@ -9,26 +9,11 @@ env:
 phases:
   pre_build:
     commands:
-      # Debug commands to check repository structure
-      - echo "=== DEBUG: Repository Structure ==="
-      - echo "Repository contents:"
-      - ls -la
-      - echo "Current directory:"
-      - pwd
-      - echo "Looking for buildspec.yml:"
-      - find . -name "buildspec.yml" -type f
-      - echo "Looking for any .yml files:"
-      - find . -name "*.yml" -type f
-      - echo "=== END DEBUG ==="
-      
-      # Original ECR setup commands
-      - echo Logging in to ECR...
+      - echo "Logging in to ECR..."
       - ACCOUNT_ID=$(aws sts get-caller-identity --query Account --output text)
       - echo "Account ID: $ACCOUNT_ID"
       - REPO_URI=$ACCOUNT_ID.dkr.ecr.$AWS_DEFAULT_REGION.amazonaws.com/$IMAGE_REPO_NAME
       - echo "Repository URI: $REPO_URI"
-
-      # Ensure repo exists with better error handling
       - |
         if ! aws ecr describe-repositories --repository-names $IMAGE_REPO_NAME --region $AWS_DEFAULT_REGION 2>/dev/null; then
           echo "Repository does not exist. Creating..."
@@ -36,13 +21,15 @@ phases:
         else
           echo "Repository already exists"
         fi
-
-      # Login to ECR
-      - echo "Logging into ECR..."
-      - aws ecr get-login-password --region $AWS_DEFAULT_REGION | docker login --username AWS --password-stdin $ACCOUNT_ID.dkr.ecr.$AWS_DEFAULT_REGION.amazonaws.com
+      - aws ecr get-login-password --region $AWS_DEFAULT_REGION | docker login --username AWS --password-stdin $REPO_URI
 
   build:
     commands:
       - echo "Build started on $(date)"
       - echo "Building Docker image..."
-      - docker build -t
+      - docker build -t $REPO_URI:$IMAGE_TAG .
+
+  post_build:
+    commands:
+      - echo "Pushing Docker image..."
+      - docker push $REPO_URI:$IMAGE_TAG
