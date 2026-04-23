@@ -1,0 +1,35 @@
+version: 0.2
+
+env:
+  variables:
+    IMAGE_REPO_NAME: ols-wp-webserver
+    AWS_DEFAULT_REGION: us-east-2
+
+phases:
+  pre_build:
+    commands:
+      - echo Logging in to ECR...
+      - ACCOUNT_ID=$(aws sts get-caller-identity --query Account --output text)
+      - REPO_URI=$ACCOUNT_ID.dkr.ecr.$AWS_DEFAULT_REGION.amazonaws.com/$IMAGE_REPO_NAME
+
+      # Ensure repo exists
+      - aws ecr describe-repositories --repository-names $IMAGE_REPO_NAME || aws ecr create-repository --repository-name $IMAGE_REPO_NAME
+
+      # Login to ECR
+      - aws ecr get-login-password --region $AWS_DEFAULT_REGION | docker login --username AWS --password-stdin $ACCOUNT_ID.dkr.ecr.$AWS_DEFAULT_REGION.amazonaws.com
+
+  build:
+    commands:
+      - echo Build started
+      - docker build -t $IMAGE_REPO_NAME .
+      - docker tag $IMAGE_REPO_NAME:latest $REPO_URI:latest
+
+  post_build:
+    commands:
+      - echo Pushing image...
+      - docker push $REPO_URI:latest
+      - printf '[{"name":"ols-container","imageUri":"%s"}]' $REPO_URI:latest > imagedefinitions.json
+
+artifacts:
+  files:
+    - imagedefinitions.json
